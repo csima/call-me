@@ -512,6 +512,39 @@ export class CallManager {
     });
   }
 
+  async sendSmsAndWaitForReply(message: string): Promise<string> {
+    const sessionId = `sms-${Date.now()}`;
+    console.error(`[${sessionId}] Sending SMS: ${message.substring(0, 50)}...`);
+
+    // Send the SMS
+    await this.config.providers.phone.sendSms(
+      this.config.userPhoneNumber,
+      this.config.phoneNumber,
+      message
+    );
+
+    console.error(`[${sessionId}] SMS sent, waiting for reply...`);
+
+    // Wait for reply with timeout
+    return new Promise((resolve) => {
+      this.activeSmsSession = {
+        sessionId,
+        userPhoneNumber: this.config.userPhoneNumber,
+        resolve,
+        startTime: Date.now(),
+      };
+
+      // Timeout after configured duration
+      setTimeout(() => {
+        if (this.activeSmsSession?.sessionId === sessionId) {
+          console.error(`[${sessionId}] SMS reply timeout`);
+          resolve('[No reply received - user did not respond within timeout period]');
+          this.activeSmsSession = null;
+        }
+      }, this.smsTimeoutMs);
+    });
+  }
+
   async initiateCall(message: string): Promise<{ callId: string; response: string }> {
     const callId = `call-${++this.currentCallId}-${Date.now()}`;
 

@@ -9,7 +9,7 @@
  * - Phone number: ~$1.15/month
  */
 
-import type { PhoneProvider, PhoneConfig } from './types.js';
+import type { PhoneProvider, PhoneConfig, SmsMessage } from './types.js';
 
 interface TwilioCallResponse {
   sid: string;
@@ -121,5 +121,67 @@ export class TwilioPhoneProvider implements PhoneProvider {
     <Stream url="${streamUrl}" />
   </Connect>
 </Response>`;
+  }
+
+  async sendSms(to: string, from: string, message: string): Promise<string> {
+    if (!this.accountSid || !this.authToken) {
+      throw new Error('Twilio not initialized');
+    }
+
+    const auth = Buffer.from(`${this.accountSid}:${this.authToken}`).toString('base64');
+
+    const response = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}/Messages.json`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          To: to,
+          From: from,
+          Body: message,
+        }).toString(),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Twilio SMS failed: ${response.status} ${error}`);
+    }
+
+    const data = await response.json() as { sid: string };
+    return data.sid;
+  }
+
+  parseSmsWebhook(body: string, contentType: string): SmsMessage | null {
+    if (!contentType.includes('application/x-www-form-urlencoded')) {
+      return null;
+    }
+
+    const params = new URLSearchParams(body);
+    const from = params.get('From');
+    const to = params.get('To');
+    const messageBody = params.get('Body');
+    const messageSid = params.get('MessageSid');
+
+    if (!from || !to || !messageBody || !messageSid) {
+      return null;
+    }
+
+    return {
+      from,
+      to,
+      body: messageBody,
+      messageId: messageSid,
+    };
+  }
+
+  getSmsAckResponse(): { contentType: string; body: string } {
+    return {
+      contentType: 'application/xml',
+      body: '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+    };
   }
 }

@@ -105,6 +105,25 @@ Add these to `~/.claude/settings.json` (recommended) or export them in your shel
 | `CALLME_STT_SILENCE_DURATION_MS` | `800` | Silence duration to detect end of speech |
 | `CALLME_TELNYX_PUBLIC_KEY` | - | Telnyx public key for webhook signature verification (recommended) |
 
+#### SMS Support (Optional)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CALLME_DEFAULT_METHOD` | `call` | Default contact method: `call` or `text` |
+
+When using SMS:
+- Claude uses the same `initiate_call` tool with `method: "text"`
+- User can override in prompts: "text me when done" or "call me about this"
+- SMS conversations are interactive - Claude waits for your reply before continuing
+
+**Twilio SMS Setup:**
+- SMS uses the same phone number and credentials as voice calls
+- Configure SMS webhook URL in Twilio Console → Phone Numbers → Your Number → Messaging → Webhook URL: `https://your-ngrok-url/sms`
+
+**Telnyx SMS Setup:**
+- SMS uses the same credentials as voice calls
+- Configure Messaging Profile in Telnyx Portal with webhook URL: `https://your-ngrok-url/sms`
+
 ### 4. Install Plugin
 
 ```bash

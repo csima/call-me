@@ -29,6 +29,13 @@ interface CallState {
   sttSession: RealtimeSTTSession | null;
 }
 
+interface SmsState {
+  sessionId: string;
+  userPhoneNumber: string;
+  resolve: (reply: string) => void;
+  startTime: number;
+}
+
 export interface ServerConfig {
   publicUrl: string;
   port: number;
@@ -75,6 +82,8 @@ export class CallManager {
   private wss: WebSocketServer | null = null;
   private config: ServerConfig;
   private currentCallId = 0;
+  private activeSmsSession: SmsState | null = null;
+  private smsTimeoutMs = 30 * 60 * 1000; // 30 minutes default
 
   constructor(config: ServerConfig) {
     this.config = config;
@@ -92,6 +101,11 @@ export class CallManager {
       if (url.pathname === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'ok', activeCalls: this.activeCalls.size }));
+        return;
+      }
+
+      if (url.pathname === '/sms') {
+        this.handleSmsWebhook(req, res);
         return;
       }
 
@@ -420,6 +434,37 @@ export class CallManager {
     } catch (error) {
       console.error(`Error handling webhook ${eventType}:`, error);
     }
+  }
+
+  private handleSmsWebhook(req: IncomingMessage, res: ServerResponse): void {
+    const contentType = req.headers['content-type'] || '';
+    let body = '';
+
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      const message = this.config.providers.phone.parseSmsWebhook(body, contentType);
+
+      if (message && this.activeSmsSession) {
+        // Normalize phone numbers for comparison (remove +, spaces, dashes)
+        const normalizePhone = (phone: string) => phone.replace(/[\s\-\+]/g, '');
+        const messageFrom = normalizePhone(message.from);
+        const expectedFrom = normalizePhone(this.activeSmsSession.userPhoneNumber);
+
+        if (messageFrom === expectedFrom || messageFrom.endsWith(expectedFrom) || expectedFrom.endsWith(messageFrom)) {
+          console.error(`[SMS] Received reply: ${message.body.substring(0, 50)}...`);
+          this.activeSmsSession.resolve(message.body);
+          this.activeSmsSession = null;
+        } else {
+          console.error(`[SMS] Ignoring message from ${message.from} (expected ${this.activeSmsSession.userPhoneNumber})`);
+        }
+      } else if (message) {
+        console.error(`[SMS] Ignoring message - no active SMS session`);
+      }
+
+      const ack = this.config.providers.phone.getSmsAckResponse();
+      res.writeHead(200, { 'Content-Type': ack.contentType });
+      res.end(ack.body);
+    });
   }
 
   async initiateCall(message: string): Promise<{ callId: string; response: string }> {

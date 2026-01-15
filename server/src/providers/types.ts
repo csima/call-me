@@ -36,12 +36,36 @@ export interface PhoneProvider {
    * Get XML response for connecting media stream (used in webhooks)
    */
   getStreamConnectXml(streamUrl: string): string;
+
+  /**
+   * Send an SMS message
+   * @returns Message SID/ID from the provider
+   */
+  sendSms(to: string, from: string, message: string): Promise<string>;
+
+  /**
+   * Parse incoming SMS webhook request
+   * @returns Parsed message or null if not an SMS webhook
+   */
+  parseSmsWebhook(body: string, contentType: string): SmsMessage | null;
+
+  /**
+   * Get acknowledgment response for SMS webhook
+   */
+  getSmsAckResponse(): { contentType: string; body: string };
 }
 
 export interface PhoneConfig {
   accountSid: string;
   authToken: string;
   phoneNumber: string;
+}
+
+export interface SmsMessage {
+  from: string;
+  to: string;
+  body: string;
+  messageId: string;
 }
 
 /**

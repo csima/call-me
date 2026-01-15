@@ -442,6 +442,51 @@ export class CallManager {
 
     req.on('data', (chunk) => { body += chunk; });
     req.on('end', () => {
+      // Validate webhook signature based on content type (provider)
+      // Telnyx sends JSON, Twilio sends form-urlencoded
+      if (contentType.includes('application/json')) {
+        // Telnyx signature validation
+        const telnyxPublicKey = this.config.providerConfig.telnyxPublicKey;
+        if (telnyxPublicKey) {
+          const signature = req.headers['telnyx-signature-ed25519'] as string | undefined;
+          const timestamp = req.headers['telnyx-timestamp'] as string | undefined;
+
+          if (!validateTelnyxSignature(telnyxPublicKey, signature, timestamp, body)) {
+            console.error('[Security] Rejecting Telnyx SMS webhook: invalid signature');
+            res.writeHead(401);
+            res.end('Invalid signature');
+            return;
+          }
+        } else {
+          console.error('[Security] Warning: CALLME_TELNYX_PUBLIC_KEY not set, skipping SMS signature verification');
+        }
+      } else if (contentType.includes('application/x-www-form-urlencoded')) {
+        // Twilio signature validation
+        const authToken = this.config.providerConfig.phoneAuthToken;
+        const signature = req.headers['x-twilio-signature'] as string | undefined;
+        const webhookUrl = `${this.config.publicUrl}/sms`;
+        const params = new URLSearchParams(body);
+
+        if (!validateTwilioSignature(authToken, signature, webhookUrl, params)) {
+          const isNgrokFreeTier = new URL(this.config.publicUrl).hostname.endsWith('.ngrok-free.dev');
+          if (isNgrokFreeTier) {
+            // Log for debugging but proceed anyway - ngrok free tier causes signature mismatches
+            console.error('[Security] Twilio SMS signature validation failed (proceeding anyway for ngrok compatibility)');
+          } else {
+            console.error('[Security] Rejecting Twilio SMS webhook: invalid signature');
+            res.writeHead(401);
+            res.end('Invalid signature');
+            return;
+          }
+        }
+      } else {
+        // Reject unknown content types
+        console.error('[Security] Rejecting SMS webhook with unknown content type:', contentType);
+        res.writeHead(400);
+        res.end('Invalid content type');
+        return;
+      }
+
       const message = this.config.providers.phone.parseSmsWebhook(body, contentType);
 
       if (message && this.activeSmsSession) {

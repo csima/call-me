@@ -34,6 +34,7 @@ interface SmsState {
   userPhoneNumber: string;
   resolve: (reply: string) => void;
   startTime: number;
+  timeoutId: ReturnType<typeof setTimeout> | null;
 }
 
 export interface ServerConfig {
@@ -497,6 +498,9 @@ export class CallManager {
 
         if (messageFrom === expectedFrom || messageFrom.endsWith(expectedFrom) || expectedFrom.endsWith(messageFrom)) {
           console.error(`[SMS] Received reply: ${message.body.substring(0, 50)}...`);
+          if (this.activeSmsSession.timeoutId) {
+            clearTimeout(this.activeSmsSession.timeoutId);
+          }
           this.activeSmsSession.resolve(message.body);
           this.activeSmsSession = null;
         } else {
@@ -513,6 +517,10 @@ export class CallManager {
   }
 
   async sendSmsAndWaitForReply(message: string): Promise<string> {
+    if (this.activeSmsSession) {
+      throw new Error('Another SMS session is already active');
+    }
+
     const sessionId = `sms-${Date.now()}`;
     console.error(`[${sessionId}] Sending SMS: ${message.substring(0, 50)}...`);
 
@@ -527,21 +535,21 @@ export class CallManager {
 
     // Wait for reply with timeout
     return new Promise((resolve) => {
-      this.activeSmsSession = {
-        sessionId,
-        userPhoneNumber: this.config.userPhoneNumber,
-        resolve,
-        startTime: Date.now(),
-      };
-
-      // Timeout after configured duration
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         if (this.activeSmsSession?.sessionId === sessionId) {
           console.error(`[${sessionId}] SMS reply timeout`);
           resolve('[No reply received - user did not respond within timeout period]');
           this.activeSmsSession = null;
         }
       }, this.smsTimeoutMs);
+
+      this.activeSmsSession = {
+        sessionId,
+        userPhoneNumber: this.config.userPhoneNumber,
+        resolve,
+        startTime: Date.now(),
+        timeoutId,
+      };
     });
   }
 

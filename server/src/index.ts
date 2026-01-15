@@ -62,6 +62,11 @@ async function main() {
                 type: 'string',
                 description: 'What you want to say to the user. Be natural and conversational.',
               },
+              method: {
+                type: 'string',
+                enum: ['call', 'text'],
+                description: 'Contact method: "call" for phone call, "text" for SMS. Defaults to CALLME_DEFAULT_METHOD env var or "call".',
+              },
             },
             required: ['message'],
           },
@@ -110,7 +115,19 @@ async function main() {
   mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
       if (request.params.name === 'initiate_call') {
-        const { message } = request.params.arguments as { message: string };
+        const { message, method } = request.params.arguments as { message: string; method?: 'call' | 'text' };
+        const contactMethod = method || process.env.CALLME_DEFAULT_METHOD || 'call';
+
+        if (contactMethod === 'text') {
+          const reply = await callManager.sendSmsAndWaitForReply(message);
+          return {
+            content: [{
+              type: 'text',
+              text: `SMS sent successfully.\n\nUser's reply:\n${reply}`,
+            }],
+          };
+        }
+
         const result = await callManager.initiateCall(message);
 
         return {

@@ -233,11 +233,20 @@ export class TelnyxPhoneProvider implements PhoneProvider {
         return null;
       }
 
+      const from = payload.from?.phone_number || payload.from;
+      const to = payload.to?.[0]?.phone_number || payload.to;
+      const messageBody = payload.text;
+      const messageId = payload.id || event.data?.id;
+
+      if (!from || !to || !messageBody || !messageId) {
+        return null;
+      }
+
       return {
-        from: payload.from?.phone_number || payload.from,
-        to: payload.to?.[0]?.phone_number || payload.to,
-        body: payload.text,
-        messageId: event.data?.id,
+        from,
+        to,
+        body: messageBody,
+        messageId,
       };
     } catch {
       return null;

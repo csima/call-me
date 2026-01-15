@@ -9,7 +9,7 @@
  * - Inbound: $0.0055/min (vs Twilio $0.0085/min)
  */
 
-import type { PhoneProvider, PhoneConfig } from './types.js';
+import type { PhoneProvider, PhoneConfig, SmsMessage } from './types.js';
 
 interface TelnyxCallResponse {
   data: {
@@ -186,5 +186,68 @@ export class TelnyxPhoneProvider implements PhoneProvider {
     // This is kept for interface compatibility but shouldn't be called
     console.error('Warning: getStreamConnectXml called on Telnyx v2 provider');
     return '';
+  }
+
+  async sendSms(to: string, from: string, message: string): Promise<string> {
+    if (!this.apiKey) {
+      throw new Error('Telnyx not initialized');
+    }
+
+    const response = await fetch('https://api.telnyx.com/v2/messages', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        to,
+        from,
+        text: message,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Telnyx SMS failed: ${response.status} ${error}`);
+    }
+
+    const data = await response.json() as { data: { id: string } };
+    return data.data.id;
+  }
+
+  parseSmsWebhook(body: string, contentType: string): SmsMessage | null {
+    if (!contentType.includes('application/json')) {
+      return null;
+    }
+
+    try {
+      const event = JSON.parse(body);
+      const eventType = event.data?.event_type;
+
+      if (eventType !== 'message.received') {
+        return null;
+      }
+
+      const payload = event.data?.payload;
+      if (!payload) {
+        return null;
+      }
+
+      return {
+        from: payload.from?.phone_number || payload.from,
+        to: payload.to?.[0]?.phone_number || payload.to,
+        body: payload.text,
+        messageId: event.data?.id,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  getSmsAckResponse(): { contentType: string; body: string } {
+    return {
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'ok' }),
+    };
   }
 }
